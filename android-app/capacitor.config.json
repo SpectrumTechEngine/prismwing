@@ -1,0 +1,10 @@
+{
+  "appId": "com.thespectrumtechengine.prismwing",
+  "appName": "Prismwing",
+  "webDir": "www",
+  "backgroundColor": "#0f0c29",
+  "server": {
+    "url": "https://thespectrumtechengine.com/prismwing/",
+    "errorPath": "index.html"
+  }
+}
