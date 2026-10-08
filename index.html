@@ -231,24 +231,27 @@
             bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
             z-index: 54;
         }
+        /* the old text row is replaced by the thin strip drawn on the game canvas (its numbers still update, hidden) */
+        .hud { display: none; }
         .icon-buttons {
-            /* above the menu and the story, so sound can be turned off anywhere */
+            /* small, side by side in the top-right corner of the strip; above the menu and story, so sound can be turned off anywhere */
             position: fixed;
-            top: calc(env(safe-area-inset-top, 0px) + 54px);
-            right: max(16px, env(safe-area-inset-right, 0px));
+            top: calc(env(safe-area-inset-top, 0px) + 3px);
+            right: max(8px, env(safe-area-inset-right, 0px));
             display: flex;
-            flex-direction: column;
-            gap: 10px;
+            flex-direction: row;
+            gap: 6px;
             z-index: 50;
         }
         .icon-btn {
-            width: 44px;
-            height: 44px;
+            width: 32px;
+            height: 32px;
+            padding: 0;
             border-radius: 50%;
-            border: 2px solid #00f5d4;
+            border: 1.5px solid #00f5d4;
             background: rgba(15, 12, 41, 0.75);
             color: #fff;
-            font-size: 20px;
+            font-size: 14px;
             pointer-events: auto;
             cursor: pointer;
             touch-action: manipulation;
@@ -1111,19 +1114,17 @@
     safeProbe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;' +
         'padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)';
     document.body.appendChild(safeProbe);
-    let safe = { l: 0, t: 0 };
+    let safe = { l: 0, t: 0, r: 0 };
     function readSafe() {
         const s = getComputedStyle(safeProbe);
-        safe = { l: parseFloat(s.paddingLeft) || 0, t: parseFloat(s.paddingTop) || 0 };
+        safe = { l: parseFloat(s.paddingLeft) || 0, t: parseFloat(s.paddingTop) || 0, r: parseFloat(s.paddingRight) || 0 };
     }
     readSafe();
     window.addEventListener('resize', readSafe);
 
-    function hudTop() {
-        const k = Math.max(0.9, Math.min(1.4, canvas.height / 380));
-        const hudFont = Math.max(12, window.innerWidth * 0.018);
-        return { k, x0: Math.max(20, safe.l + 12), y0: Math.max(12, safe.t) + hudFont * 1.75 + 8 };
-    }
+    // Everything sits in one thin, see-through strip across the top:
+    // left: hearts, shield, retries, fuel, hull, ammo · middle: the seven shards and world/level · right: score (pause/mute beside it)
+    function hudScale() { return Math.max(0.9, Math.min(1.5, canvas.height / 380)); }
 
     function hudHeart(x, y, r, full) {
         ctx.beginPath();
@@ -1141,112 +1142,117 @@
         }
     }
 
-    function hudBar(x, y, w, h, ratio, color, label) {
-        ctx.fillStyle = 'rgba(0,0,0,0.45)';
-        ctx.fillRect(x, y, w, h);
-        ctx.fillStyle = color;
-        ctx.fillRect(x, y, w * Math.max(0, Math.min(1, ratio)), h);
-        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-        ctx.fillStyle = '#ffffff';
-        ctx.textAlign = 'right';
-        ctx.fillText(label, x - 4, y + h / 2 + 0.5);
-    }
-
     function drawHud() {
-        const { k, x0, y0 } = hudTop();
+        const k = hudScale(), W = canvas.width;
+        const top = safe.t, H = 32 * k, y = top + H / 2;
         const blinkOn = Math.floor(frameCount / 15) % 2 === 0;
-        const labelW = 32 * k, barW = 54 * k, barH = 8 * k;
-        const panelW = labelW * 2 + barW * 2 + 30 * k, panelH = 42 * k;
         ctx.save();
-        // see-through backing, so clouds and jets behind it stay visible
-        ctx.fillStyle = 'rgba(15, 12, 41, 0.4)';
-        ctx.beginPath();
-        if (ctx.roundRect) ctx.roundRect(x0 - 8, y0 - 8 * k, panelW, panelH, 10 * k); else ctx.rect(x0 - 8, y0 - 8 * k, panelW, panelH);
-        ctx.fill();
-        ctx.font = `900 ${Math.round(9 * k)}px monospace`;
+        ctx.fillStyle = 'rgba(15, 12, 41, 0.5)';
+        ctx.fillRect(0, 0, W, top + H);
         ctx.textBaseline = 'middle';
 
-        // row 1: fuel and hull
-        const fuelCol = fuel > 40 ? '#00f5d4' : (fuel > 20 ? '#ffb703' : (blinkOn ? '#ff0055' : '#7a0029'));
-        hudBar(x0 + labelW, y0, barW, barH, fuel / MAX_FUEL, fuelCol, 'FUEL');
-        const hullCol = hullFlash > 0 ? '#ffffff' : (hull > 60 ? '#00f5d4' : (hull > 30 ? '#ffb703' : '#ff0055'));
-        const repairing = hull < 100 && hullQuiet > hullRepairDelay();
-        hudBar(x0 + labelW * 2 + barW + 14 * k, y0, barW, barH, hull / 100, hullCol, repairing ? '+HULL' : 'HULL');
-
-        // row 2: hearts, shield, then retries left in this world
-        const ry = y0 + 20 * k, hr = 6 * k;
-        let rx = x0 + 6 * k;
-        for (let i = 0; i < MAX_LIVES; i++) { hudHeart(rx, ry, hr, i < lives); rx += 17 * k; }
+        // left: hearts, shield, retries
+        let x = Math.max(16, safe.l + 10) + 4 * k;
+        for (let i = 0; i < MAX_LIVES; i++) { hudHeart(x, y, 5.5 * k, i < lives); x += 15 * k; }
         if (shieldActive) {
             ctx.fillStyle = '#c77dff';
             ctx.beginPath();
-            ctx.moveTo(rx, ry - 7 * k); ctx.lineTo(rx + 6 * k, ry - 4 * k); ctx.lineTo(rx + 5 * k, ry + 3 * k);
-            ctx.lineTo(rx, ry + 8 * k); ctx.lineTo(rx - 5 * k, ry + 3 * k); ctx.lineTo(rx - 6 * k, ry - 4 * k);
+            ctx.moveTo(x, y - 7 * k); ctx.lineTo(x + 5.5 * k, y - 3.5 * k); ctx.lineTo(x + 4.5 * k, y + 3 * k);
+            ctx.lineTo(x, y + 7.5 * k); ctx.lineTo(x - 4.5 * k, y + 3 * k); ctx.lineTo(x - 5.5 * k, y - 3.5 * k);
             ctx.closePath();
             ctx.fill();
-            rx += 17 * k;
+            x += 15 * k;
         }
-        rx += 12 * k;
+        x += 8 * k;
         for (let i = 0; i < RETRIES_PER_WORLD; i++) {
             ctx.save();
-            ctx.translate(rx + i * 26 * k, ry);
-            ctx.scale(0.6 * k, 0.6 * k);
+            ctx.translate(x + i * 20 * k, y);
+            ctx.scale(0.45 * k, 0.45 * k);
             ctx.globalAlpha = i < worldRetries ? 1 : 0.25;
             ctx.fillStyle = i < worldRetries ? '#d9b8ff' : '#666';
             ctx.beginPath(); ctx.ellipse(0, 0, 20, 6, 0, 0, Math.PI * 2); ctx.fill();
             ctx.fillStyle = i < worldRetries ? '#7b2cbf' : '#444';
             ctx.beginPath(); ctx.moveTo(-12, -4); ctx.lineTo(-19, -14); ctx.lineTo(-6, -4); ctx.closePath(); ctx.fill();
-            ctx.beginPath(); ctx.moveTo(-2, 0); ctx.lineTo(-8, 9); ctx.lineTo(5, 1); ctx.closePath(); ctx.fill();
             ctx.restore();
         }
+        x += RETRIES_PER_WORLD * 20 * k + 4 * k;
 
-        // warnings: one short blinking line under the panel, only when needed
-        const warnings = [];
-        if (fuel < 20) warnings.push('LOW FUEL');
-        if (ammo === 0) warnings.push('NO AMMO');
-        else if (ammo <= 3) warnings.push('LOW AMMO');
-        if (warnings.length && blinkOn) {
+        // fuel and hull: small bars with labels
+        ctx.font = `900 ${Math.round(9 * k)}px monospace`;
+        const bar = (label, ratio, col) => {
+            ctx.fillStyle = '#ffffff';
             ctx.textAlign = 'left';
-            ctx.font = `900 ${Math.round(11 * k)}px monospace`;
-            ctx.lineWidth = 3;
-            ctx.strokeStyle = '#10002b';
-            const wt = '⚠ ' + warnings.join(' · ');
-            ctx.strokeText(wt, x0 - 4, y0 + panelH + 2 * k);
-            ctx.fillStyle = '#ff0055';
-            ctx.fillText(wt, x0 - 4, y0 + panelH + 2 * k);
-        }
+            ctx.fillText(label, x, y + 0.5);
+            x += ctx.measureText(label).width + 4 * k;
+            const bw = 44 * k, bh = 6 * k;
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.fillRect(x, y - bh / 2, bw, bh);
+            ctx.fillStyle = col;
+            ctx.fillRect(x, y - bh / 2, bw * Math.max(0, Math.min(1, ratio)), bh);
+            x += bw + 9 * k;
+        };
+        bar('FUEL', fuel / MAX_FUEL, fuel > 40 ? '#00f5d4' : (fuel > 20 ? '#ffb703' : (blinkOn ? '#ff0055' : '#7a0029')));
+        const repairing = hull < 100 && hullQuiet > hullRepairDelay();
+        bar(repairing ? '+HULL' : 'HULL', hull / 100, hullFlash > 0 ? '#ffffff' : (hull > 60 ? '#00f5d4' : (hull > 30 ? '#ffb703' : '#ff0055')));
+        ctx.font = `900 ${Math.round(11 * k)}px monospace`;
+        ctx.fillStyle = ammo <= 3 ? (blinkOn ? '#ff0055' : '#7a0029') : '#ffb703';
+        ctx.fillText('⚡' + ammo, x, y + 0.5);
+        const leftEnd = x + ctx.measureText('⚡' + ammo).width;
 
-        // the seven Prism Shards, small, top-centre
+        // middle: the seven Prism Shards, then the world and level
+        const gap = 13 * k, label = `${COL().irish} ${worldLevel()}/3`;
+        ctx.font = `900 ${Math.round(11 * k)}px monospace`;
+        const midW = gap * 7 + 6 * k + ctx.measureText(label).width;
+        const gx0 = Math.max(leftEnd + 16 * k, W / 2 - midW / 2) + 5 * k;
         const got = shardsCollected();
-        const gap = 17 * k, gx0 = canvas.width / 2 - gap * 3, gy = y0 + 3 * k;
         for (let i = 0; i < 7; i++) {
             const cur = i === worldIndex() && !(isBossLevel() && bossBeaten);
-            const pulse = (cur ? 1 + Math.sin(frameCount * 0.15) * 0.12 : 1) * 0.5 * k;
+            const s = (cur ? 1 + Math.sin(frameCount * 0.15) * 0.12 : 1) * 0.36 * k;
             ctx.save();
-            ctx.translate(gx0 + i * gap, gy);
-            ctx.scale(pulse, pulse);
+            ctx.translate(gx0 + i * gap, y);
+            ctx.scale(s, s);
             ctx.beginPath();
             ctx.moveTo(0, -16); ctx.lineTo(11, -4); ctx.lineTo(0, 16); ctx.lineTo(-11, -4);
             ctx.closePath();
             if (i < got) {
                 ctx.fillStyle = COLOURS[i].base;
                 ctx.fill();
-                ctx.fillStyle = 'rgba(255,255,255,0.55)';
-                ctx.beginPath(); ctx.moveTo(0, -16); ctx.lineTo(5, -4); ctx.lineTo(0, -2); ctx.lineTo(-5, -4); ctx.closePath(); ctx.fill();
             } else {
-                ctx.fillStyle = 'rgba(15,12,41,0.55)';
-                ctx.fill();
-                ctx.strokeStyle = cur ? COLOURS[i].light : 'rgba(255,255,255,0.35)';
-                ctx.lineWidth = cur ? 4 : 3;
+                ctx.strokeStyle = cur ? COLOURS[i].light : 'rgba(255,255,255,0.4)';
+                ctx.lineWidth = 4;
                 ctx.stroke();
             }
             ctx.restore();
         }
+        ctx.textAlign = 'left';
+        ctx.fillStyle = COL().light;
+        ctx.fillText(label, gx0 + 7 * gap - 2 * k, y + 0.5);
+
+        // right: the score (the pause and mute buttons sit just to its right)
+        const m = comboMultiplier();
+        ctx.textAlign = 'right';
+        ctx.font = `900 ${Math.round(13 * k)}px monospace`;
+        ctx.fillStyle = '#ffb703';
+        ctx.fillText('SCORE ' + totalPoints() + (m > 1 ? ' x' + m : ''), W - Math.max(8, safe.r) - 86, y + 0.5);
+
+        // low fuel / ammo: one short blinking line under the strip, only when needed
+        const warnings = [];
+        if (fuel < 20) warnings.push('LOW FUEL');
+        if (ammo === 0) warnings.push('NO AMMO');
+        else if (ammo <= 3) warnings.push('LOW AMMO');
+        if (warnings.length && blinkOn) {
+            ctx.textAlign = 'left';
+            ctx.font = `900 ${Math.round(10 * k)}px monospace`;
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = '#10002b';
+            const wt = '⚠ ' + warnings.join(' · ');
+            const wy = top + H + 9 * k;
+            ctx.strokeText(wt, Math.max(16, safe.l + 10), wy);
+            ctx.fillStyle = '#ff0055';
+            ctx.fillText(wt, Math.max(16, safe.l + 10), wy);
+        }
         ctx.restore();
     }
-
     // The controls tip shows for the first few seconds of a flight, then fades away
     const hintEl = document.querySelector('.controls-hint');
     let hintTimer = null;
@@ -2603,29 +2609,31 @@
         }
     }
 
-    function drawBossBar() {
-        if (!boss || boss.dead) return;
-        const w = Math.min(460, canvas.width * 0.5), h = 14;
-        const ht = hudTop();
-        const x = (canvas.width - w) / 2, y = ht.y0 + 40 * ht.k;   // below the shards
+    // The boss's health: a tall, thin bar just behind the boss (on the side away from you), moving with it.
+    // It drains from the top down, turns red when the boss is enraged, and flashes white on a hit.
+    function drawBossHealth(b) {
+        if (!b || b.dead || b.state === 'dying') return;
+        const rx = b.kind === 'storm' ? 140 : b.kind === 'shadow' ? 125 : 120;
+        const ry = b.kind === 'storm' ? 85 : b.kind === 'shadow' ? 110 : 40;
+        const worldWidth = canvas.width / CAMERA_SCALE;
+        const w = 14, h = Math.max(150, ry * 2 + 40);
+        const x = Math.min(b.x + rx + 50, worldWidth - w - 24), top = b.y - h / 2;
+        const ratio = Math.max(0, b.hp) / b.maxHp, fill = h * ratio;
         ctx.save();
-        ctx.font = "900 14px -apple-system, 'Segoe UI', Roboto, sans-serif";
-        ctx.textAlign = 'center';
-        ctx.fillStyle = boss.enraged ? '#ff0055' : '#ffb703';
-        ctx.lineWidth = 4;
-        ctx.strokeStyle = '#10002b';
-        ctx.strokeText(boss.name, canvas.width / 2, y - 6);
-        ctx.fillText(boss.name, canvas.width / 2, y - 6);
-        ctx.fillStyle = 'rgba(15,12,41,0.85)';
-        ctx.fillRect(x - 3, y - 3, w + 6, h + 6);
-        const g = ctx.createLinearGradient(x, 0, x + w, 0);
-        g.addColorStop(0, '#ff0055');
-        g.addColorStop(1, '#ffb703');
-        ctx.fillStyle = boss.flash > 0 ? '#ffffff' : g;
-        ctx.fillRect(x, y, w * Math.max(0, boss.hp) / boss.maxHp, h);
-        ctx.strokeStyle = '#ffffff';
+        ctx.fillStyle = 'rgba(15, 12, 41, 0.75)';
+        ctx.fillRect(x - 3, top - 3, w + 6, h + 6);
+        if (b.flash > 0) {
+            ctx.fillStyle = '#ffffff';
+        } else {
+            const g = ctx.createLinearGradient(0, top + h, 0, top);
+            g.addColorStop(0, '#ff0055');
+            g.addColorStop(1, b.enraged ? '#ff0055' : '#ffb703');
+            ctx.fillStyle = g;
+        }
+        ctx.fillRect(x, top + h - fill, w, fill);
+        ctx.strokeStyle = b.enraged ? '#ff0055' : 'rgba(255, 255, 255, 0.8)';
         ctx.lineWidth = 2;
-        ctx.strokeRect(x - 3, y - 3, w + 6, h + 6);
+        ctx.strokeRect(x - 3, top - 3, w + 6, h + 6);
         ctx.restore();
     }
 
@@ -3911,6 +3919,7 @@
             // the boss may have been removed during its update (e.g. it knocked you back to a checkpoint)
             if (boss === b) {
                 b.draw();
+                drawBossHealth(b);
                 if (b.dead && !bossBeaten) {
                     bossBeaten = true;
                     stats.bosses = (stats.bosses || 0) + 1;
@@ -4003,7 +4012,6 @@
         ctx.restore();
 
         drawAcidVignette();
-        drawBossBar();
         if (isRunning) drawHud();
         drawBanner();
 
@@ -4231,7 +4239,7 @@
         document.getElementById('win-sub').textContent = won > 1 ? `The light of Solas is home again (round ${won})` : 'The light of Solas is home';
         document.getElementById('win-new-best').style.display = isNewBest ? 'block' : 'none';
         document.getElementById('win-points').textContent = pts;
-        document.getElementById('win-breakdown').textContent = `☁️ ${stats.clouds} clouds  ✈️ ${stats.jets} jets  🪂 ${stats.pilots} pilots  👑 ${stats.bosses || 0} bosses`;
+        document.getElementById('win-breakdown').textContent = `📏 ${score} NM  ☁️ ${stats.clouds} clouds  ✈️ ${stats.jets} jets  🪂 ${stats.pilots} pilots  👑 ${stats.bosses || 0} bosses`;
         document.getElementById('keep-flying-btn').textContent = `KEEP FLYING: ROUND ${won + 1} 🔥`;
         const msg = encodeURIComponent(`💜✈️ Prismwing: The Return of Solas\n\nI beat Anmorolc and brought the light of Solas home${won > 1 ? ` for the ${won}${won === 2 ? 'nd' : won === 3 ? 'rd' : 'th'} time` : ''}, with ${pts} points! Can you beat my record?`);
         document.getElementById('win-whatsapp-btn').href = `https://api.whatsapp.com/send?text=${msg}`;
@@ -5389,7 +5397,7 @@
         render(el) {
             el.innerHTML = '<p>God mode, level skipping and story previews for Prismwing. A run where admin was used never counts as a best score.</p>' +
                 '<div class="ste-row"><button class="ste-btn go" data-open>Open game admin</button></div>' +
-                '<p class="ste-muted">Shortcut on this phone: tap the LVL counter in a flight, or the PRISMWING title on the menu, 5 times quickly.</p>';
+                '<p class="ste-muted">Shortcut on this phone: tap the PRISMWING title on the menu 5 times quickly.</p>';
             el.querySelector('[data-open]').onclick = () => { document.querySelectorAll('.ste-layer').forEach(l => l.remove()); setAdmin(true); };
         }
     });
