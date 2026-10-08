@@ -562,11 +562,11 @@
     // ===== Seven colour worlds, three levels each; level 3 of every world is its boss =====
     const COLOURS = [
         { irish: 'DEARG',   en: 'Red',    base: '#ff2e4d', light: '#ff9aa8' },
-        { irish: 'ORÁISTE', en: 'Orange', base: '#ff7b00', light: '#ffbf80' },
-        { irish: 'BUÍ',     en: 'Yellow', base: '#ffc300', light: '#fff0a0' },
+        { irish: 'ORAISTE', en: 'Orange', base: '#ff7b00', light: '#ffbf80' },
+        { irish: 'BUI',     en: 'Yellow', base: '#ffc300', light: '#fff0a0' },
         { irish: 'GLAS',    en: 'Green',  base: '#00d98b', light: '#9df5d0' },
         { irish: 'GORM',    en: 'Blue',   base: '#1e90ff', light: '#a3d2ff' },
-        { irish: 'INDEAGÓ', en: 'Indigo', base: '#5b5bff', light: '#b8b8ff' },
+        { irish: 'INDEAGO', en: 'Indigo', base: '#5b5bff', light: '#b8b8ff' },
         { irish: 'CORCRA',  en: 'Purple', base: '#b14bff', light: '#e0b3ff' }
     ];
     const BOSS_SPECS = [
@@ -925,12 +925,28 @@
             shipDown(reason);
         } else {
             floatTexts.push(new FloatText(aircraft.x + 25, aircraft.y - 45, '-1 ❤️', '#ff4d6d', 30, 55, 0));
+            respawnShip();
         }
     }
 
     let acidFlash = 0;
     const RESPAWN_FRAMES = 45;   // about 3/4 of a second between crashing and the new plane appearing
     let respawnTimer = 0;
+
+    // Every lost heart: the ship blows up, then a fresh one appears at a safe height a moment later
+    function respawnShip() {
+        const worldHeight = canvas.height / CAMERA_SCALE;
+        createExplosion(aircraft.x + 20, aircraft.y + 8);
+        playExplosionSound();
+        shakeMag = Math.max(shakeMag, 16);
+        flashAlpha = 0.4;
+        respawnTimer = RESPAWN_FRAMES;
+        hitInvuln = Math.max(hitInvuln, RESPAWN_FRAMES + 90);
+        aircraft.y = worldHeight * 0.45;
+        aircraft.velocityY = 0;
+        aircraft.targetY = aircraft.y;
+        autopilot = true;
+    }
 
     // Fizzing, bubbling acid eating through metal
     function playAcidMeltSound() {
@@ -2748,18 +2764,12 @@
                     shipDown("The Prismwing ran out of fuel and crashed!");
                 } else {
                     // hitting the ground costs one heart, then the plane bounces back up and glides to safety
+                    // costs a heart (the ship explodes and respawns); if a shield or a moment's protection saved it, bounce back up instead
                     const livesBefore = lives;
                     takeHit("The Prismwing flew too low and crashed!");
-                    if (isRunning && lives <= livesBefore) {   // not when the last heart went and the world restarted
-                        // the plane blows up, then a fresh one appears at a safe height a moment later
-                        createExplosion(this.x + 20, this.y + 8);
-                        playExplosionSound();
-                        shakeMag = Math.max(shakeMag, 16);
-                        flashAlpha = 0.4;
-                        respawnTimer = RESPAWN_FRAMES;
-                        hitInvuln = Math.max(hitInvuln, RESPAWN_FRAMES + 90);
-                        this.y = worldHeight * 0.45;
-                        this.velocityY = 0;
+                    if (isRunning && lives === livesBefore && respawnTimer === 0) {
+                        this.y = worldHeight - 120;
+                        this.velocityY = -6;
                         this.targetY = this.y;
                         autopilot = true;
                     }
@@ -3582,7 +3592,9 @@
             }
         }
 
-        for (let i = shieldPickups.length - 1; i >= 0; i--) {
+        // while the ship is exploding/respawning it can't collect anything
+        const gone = respawnTimer > 0;
+        for (let i = gone ? -1 : shieldPickups.length - 1; i >= 0; i--) {
             const sp = shieldPickups[i];
             if ((pcx - sp.x) ** 2 + (pcy - sp.y) ** 2 < (sp.radius + 22) ** 2 && sp.kind === 'heart') {
                 shieldPickups.splice(i, 1);
@@ -3617,7 +3629,7 @@
             }
         }
 
-        for (let i = fuelPickups.length - 1; i >= 0; i--) {
+        for (let i = gone ? -1 : fuelPickups.length - 1; i >= 0; i--) {
             let f = fuelPickups[i];
             let distX = aircraft.x + aircraft.width / 2 - f.x;
             let distY = aircraft.y + aircraft.height / 2 - f.y;
@@ -3628,7 +3640,7 @@
             }
         }
 
-        for (let i = ammoPickups.length - 1; i >= 0; i--) {
+        for (let i = gone ? -1 : ammoPickups.length - 1; i >= 0; i--) {
             let a = ammoPickups[i];
             let distX = aircraft.x + aircraft.width / 2 - a.x;
             let distY = aircraft.y + aircraft.height / 2 - a.y;
